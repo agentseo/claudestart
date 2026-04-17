@@ -137,7 +137,7 @@ mkdir -p ~/.claude-work
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-window-option -t $TMUX_PANE window-status-style default 2>/dev/null || true",
+            "command": "tmux set-window-option -u -t $TMUX_PANE window-status-style 2>/dev/null || true",
             "async": true
           }
         ]
@@ -361,7 +361,7 @@ rtk init -g
         "hooks": [
           {
             "type": "command",
-            "command": "tmux set-window-option -t $TMUX_PANE window-status-style default 2>/dev/null || true",
+            "command": "tmux set-window-option -u -t $TMUX_PANE window-status-style 2>/dev/null || true",
             "async": true
           }
         ]
@@ -416,7 +416,121 @@ sed -i "s|/home/user|$HOME|g" ~/.claude-work/settings.json
 
 ---
 
-## 9. Перезапусти Claude Code
+## 9. `~/.tmux.conf`
+
+Тема Catppuccin Mocha, удобные шорткаты, сохранение сессий. Активная вкладка — зелёная, ждущая ответа — красная.
+
+```bash
+# Установи TPM (менеджер плагинов tmux)
+git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+```
+
+```bash
+# ~/.tmux.conf
+# --- Основные настройки ---
+set -g default-terminal "tmux-256color"
+set -ag terminal-overrides ",xterm-256color:RGB"
+set -g mouse on
+set -g history-limit 10000
+set -g base-index 1
+setw -g pane-base-index 1
+set -g renumber-windows on
+set -g escape-time 0
+set -g focus-events on
+
+# --- Префикс: Ctrl+a (удобнее чем Ctrl+b) ---
+unbind C-b
+set -g prefix C-a
+bind C-a send-prefix
+
+# --- Окна (табы) ---
+bind c new-window -c "#{pane_current_path}"
+bind n next-window
+bind p previous-window
+bind -n M-1 select-window -t 1
+bind -n M-2 select-window -t 2
+bind -n M-3 select-window -t 3
+bind -n M-4 select-window -t 4
+bind -n M-5 select-window -t 5
+bind -n M-6 select-window -t 6
+bind -n M-7 select-window -t 7
+bind -n M-8 select-window -t 8
+bind -n M-9 select-window -t 9
+
+# --- Панели: разделение ---
+bind | split-window -h -c "#{pane_current_path}"
+bind - split-window -v -c "#{pane_current_path}"
+unbind '"'
+unbind %
+
+# --- Навигация по панелям: Alt+стрелки ---
+bind -n M-Left select-pane -L
+bind -n M-Right select-pane -R
+bind -n M-Up select-pane -U
+bind -n M-Down select-pane -D
+
+# --- Ресайз панелей: Prefix + стрелки ---
+bind -r Left resize-pane -L 5
+bind -r Right resize-pane -R 5
+bind -r Up resize-pane -U 3
+bind -r Down resize-pane -D 3
+
+# --- Быстрая перезагрузка конфига ---
+bind r source-file ~/.tmux.conf \; display "Config reloaded!"
+
+# --- Статус-бар (табы сверху) ---
+set -g status-position top
+set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
+set -g status-left-length 30
+set -g status-right-length 50
+
+set -g status-left "#[bg=#89b4fa,fg=#1e1e2e,bold] #S #[bg=default] "
+set -g status-right "#[fg=#a6adc8] %H:%M  %d/%m "
+
+# Стиль табов (окон)
+# Неактивные: серый текст, дефолтный фон
+setw -g window-status-style "fg=#6c7086,bg=default"
+setw -g window-status-format " #I:#W "
+# Активная: чёрный текст на зелёном фоне (единственный зелёный таб)
+setw -g window-status-current-style "fg=#1e1e2e,bg=#a6e3a1,bold"
+setw -g window-status-current-format " #I:#W "
+setw -g window-status-separator ""
+
+# Bell: красный фон когда Claude ждёт ответа
+set -g monitor-bell on
+set -g bell-action any
+setw -g window-status-bell-style "bg=#f38ba8,fg=#1e1e2e,bold"
+
+# --- Панели ---
+set -g pane-border-style "fg=#313244"
+set -g pane-active-border-style "fg=#89b4fa"
+
+# --- Копирование (vi mode) ---
+setw -g mode-keys vi
+bind -T copy-mode-vi v send -X begin-selection
+bind -T copy-mode-vi y send -X copy-selection-and-cancel
+
+# --- Плагины ---
+set -g @plugin 'tmux-plugins/tpm'
+set -g @plugin 'tmux-plugins/tmux-resurrect'
+set -g @plugin 'tmux-plugins/tmux-continuum'
+
+set -g @resurrect-processes 'mc bash'
+set -g @continuum-restore 'on'
+set -g @continuum-save-interval '15'
+
+run '~/.tmux/plugins/tpm/tpm'
+```
+
+```bash
+# Применить конфиг
+tmux source-file ~/.tmux.conf
+# Установить плагины: внутри tmux нажми Prefix+I (Ctrl+a, затем I)
+```
+
+---
+
+## 10. Перезапусти Claude Code
 
 Хуки и статус-строка подхватываются только при старте новой сессии.
 
