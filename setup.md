@@ -1,599 +1,370 @@
 # Claude Code — Установка и настройка
 
 > Если ты Claude — выполняй шаги последовательно, проверяй результат на каждом шаге.
+> Полные конфиги (settings.json, statusline-command.sh, tmux.conf) — в git-истории этого репо.
 
 ---
 
 ## 0. Замени путь под себя
 
-Во всех файлах ниже путь `/home/user` — замени на свой `$HOME`:
-
 ```bash
 echo $HOME   # узнай свой путь
+# После создания каждого файла: sed -i "s|/home/user|$HOME|g" <файл>
 ```
-
-После создания каждого файла применяй:
-```bash
-sed -i "s|/home/user|$HOME|g" <файл>
-```
-
----
 
 ## 1. Зависимости
 
 ```bash
-# Обязательно
 sudo apt update && sudo apt install -y jq tmux
-
-# Claude Code (если не установлен)
 npm install -g @anthropic-ai/claude-code
-
-# RTK
-cargo install rtk
-# Или скачай бинарник: https://github.com/rtk-ai/rtk/releases
-
-# Форматтеры (опционально)
-npm install -g prettier   # JS, TS, JSON, CSS, HTML, MD
-pip install ruff          # Python (быстрый)
-pip install black         # Python (fallback)
-# rustfmt — входит в Rust toolchain
-# gofmt — входит в Go
-```
-
-Проверь:
-```bash
+cargo install rtk                          # или бинарник с github.com/rtk-ai/rtk/releases
+npm install -g prettier && pip install ruff  # форматтеры (опционально)
 jq --version && rtk --version && claude --version
 ```
 
----
+## 2. Функции cc1/cc2 (~/.bashrc)
 
-## 2. Алиасы
-
-Добавь в конец `~/.bashrc`:
+> Раньше тут были `alias`, но при таком запуске процесс в `/proc/<pid>/comm`
+> назывался `claude`, и tmux-resurrect не различал cc1/cc2 при восстановлении
+> (плюс терялся `--dangerously-skip-permissions` и `CLAUDE_CONFIG_DIR` для cc2).
+> Решение — bash-функции с `exec -a`, которые задают argv[0]:
 
 ```bash
-# Claude Code — два аккаунта
 alias claude1="claude"
-alias cc1='claude1 --dangerously-skip-permissions'
-
-alias claude2="CLAUDE_CONFIG_DIR=~/.claude-work claude"
-alias cc2='claude2 --dangerously-skip-permissions'
+alias claude2="CLAUDE_CONFIG_DIR=$HOME/.claude-work claude"
+cc1() { exec -a cc1 claude --dangerously-skip-permissions "$@"; }
+cc2() { CLAUDE_CONFIG_DIR=$HOME/.claude-work exec -a cc2 claude --dangerously-skip-permissions "$@"; }
 ```
+
+Если используется `claude-vps` (через VPS-тоннель) — подставь `claude-vps` вместо `claude`.
+
+Проверка после `source ~/.bashrc` + запуска `cc1`:
 
 ```bash
-source ~/.bashrc
+ps -eo pid,comm,args | grep -E "cc1|cc2"
+# В колонке COMM должно быть cc1/cc2, а НЕ claude
 ```
 
----
+### Алиасы быстрого перехода в проекты
+
+```bash
+alias pcl='cd ~/projects/claude && cc1 -c'
+alias pseo='cd ~/projects/SEO && cc1 -c'
+# ... и т.д. для каждого проекта
+```
 
 ## 3. Папки
 
 ```bash
-mkdir -p ~/.claude/hooks
-mkdir -p ~/.claude-work
+mkdir -p ~/.claude/hooks ~/.claude-work
 ```
 
----
+## 4. ~/.claude/settings.json
 
-## 4. `~/.claude/settings.json`
+Ключевые секции:
 
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(git *)",
-      "Bash(docker *)",
-      "Bash(docker-compose *)",
-      "Bash(poetry run *)",
-      "Bash(python *)",
-      "Bash(python3 *)",
-      "Bash(pip *)",
-      "Bash(npm run *)",
-      "Bash(npx *)",
-      "Bash(bun *)",
-      "Bash(node *)",
-      "Bash(ls *)",
-      "Bash(rtk *)",
-      "Bash(cat *)",
-      "Bash(find *)",
-      "Bash(grep *)",
-      "Bash(rg *)",
-      "Bash(tree *)",
-      "Bash(pwd)",
-      "Bash(echo *)",
-      "Bash(wc *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(which *)",
-      "Bash(whoami)",
-      "Bash(env)",
-      "Bash(printenv *)",
-      "Bash(ps *)",
-      "Bash(kill *)",
-      "Bash(mkdir *)",
-      "Bash(cp *)",
-      "Bash(mv *)"
-    ]
-  },
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -Command \"[console]::beep(600,200); [console]::beep(900,200)\"",
-            "async": true
-          },
-          {
-            "type": "command",
-            "command": "tmux set-window-option -t $TMUX_PANE window-status-style 'bg=#f38ba8,fg=#1e1e2e,bold' 2>/dev/null || true",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tmux set-window-option -u -t $TMUX_PANE window-status-style 2>/dev/null || true",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -Command \"[console]::beep(800,300)\"",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r '.tool_input.file_path // empty' | { read -r f || exit 0; bash /home/user/.claude/hooks/format-file.sh \"$f\"; }",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/user/.claude/hooks/rtk-rewrite.sh"
-          }
-        ]
-      }
-    ]
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "bash /home/user/.claude/statusline-command.sh"
-  },
-  "skipDangerousModePermissionPrompt": true
-}
-```
+- `permissions.allow` — список разрешённых команд (git, docker, python, rtk и др.)
+- `hooks.PreToolUse[Bash]` — `rtk hook claude` (RTK rewrite)
+- `hooks.PostToolUse[Write|Edit]` — `format-file.sh` (авто-форматирование)
+- `hooks.Stop` — beep + tmux tab красный
+- `hooks.UserPromptSubmit` — tmux tab сброс цвета
+- `statusLine` — `bash ~/.claude/statusline-command.sh`
+- `skipDangerousModePermissionPrompt: true`
 
 ```bash
 sed -i "s|/home/user|$HOME|g" ~/.claude/settings.json
 ```
 
----
+## 5. ~/.claude/statusline-command.sh
 
-## 5. `~/.claude/statusline-command.sh`
-
-Нижняя строка Claude Code: аккаунт, модель, папка/ветка (`*` если есть незакоммиченные изменения), контекст, rate limits.
-
-```bash
-#!/bin/bash
-input=$(cat)
-model=$(echo "$input" | jq -r '.model.display_name // "unknown"')
-used=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
-workdir=$(echo "$input" | jq -r '.workspace.current_dir')
-branch=$(git --no-optional-locks -C "$workdir" rev-parse --abbrev-ref HEAD 2>/dev/null)
-dirty=$(git --no-optional-locks -C "$workdir" status --porcelain 2>/dev/null | head -1)
-[ -n "$dirty" ] && branch="${branch}*"
-
-if [ "${CLAUDE_CONFIG_DIR}" = "/home/user/.claude-work" ]; then
-  instance="claude2"
-else
-  instance="claude1"
-fi
-
-printf "\033[35m%s\033[0m" "$instance"
-printf "  \033[36m%s\033[0m" "$model"
-
-dir=$(basename "$workdir")
-if [ -n "$branch" ]; then
-  printf "  \033[33m%s/%s\033[0m" "$dir" "$branch"
-else
-  printf "  \033[33m%s\033[0m" "$dir"
-fi
-
-if [ -n "$used" ]; then
-  printf "  \033[32mctx: %.0f%%\033[0m" "$used"
-fi
-
-five_hour=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty')
-seven_day=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
-
-if [ -n "$five_hour" ]; then
-  if [ "$(echo "$five_hour" | awk '{print ($1 >= 80)}')" = "1" ]; then
-    printf "  \033[31m5h: %.0f%%\033[0m" "$five_hour"
-  else
-    printf "  \033[90m5h: %.0f%%\033[0m" "$five_hour"
-  fi
-fi
-
-if [ -n "$seven_day" ]; then
-  if [ "$(echo "$seven_day" | awk '{print ($1 >= 80)}')" = "1" ]; then
-    printf "  \033[31m7d: %.0f%%\033[0m" "$seven_day"
-  else
-    printf "  \033[90m7d: %.0f%%\033[0m" "$seven_day"
-  fi
-fi
-```
+Показывает: аккаунт, модель, папка/ветка (со `*` если есть незакоммиченные), ctx%, rate limits (5h/7d).
 
 ```bash
 sed -i "s|/home/user|$HOME|g" ~/.claude/statusline-command.sh
 chmod +x ~/.claude/statusline-command.sh
 ```
 
----
+## 6. ~/.claude/hooks/format-file.sh
 
-## 6. `~/.claude/hooks/format-file.sh`
-
-Авто-форматирование файла после записи. Диспетч по расширению.
-
-```bash
-#!/usr/bin/env bash
-f="$1"
-[ -z "$f" ] && exit 0
-[ -f "$f" ] || exit 0
-
-case "$f" in
-  *.py)
-    ruff format "$f" 2>/dev/null || black "$f" 2>/dev/null || true
-    ;;
-  *.rs)
-    rustfmt "$f" 2>/dev/null || true
-    ;;
-  *.go)
-    gofmt -w "$f" 2>/dev/null || true
-    ;;
-  *)
-    prettier --write "$f" 2>/dev/null || npx --no-install prettier --write "$f" 2>/dev/null || true
-    ;;
-esac
-```
+Авто-форматирование по расширению: `.py` → ruff/black, `.rs` → rustfmt, `.go` → gofmt, остальное → prettier.
 
 ```bash
 chmod +x ~/.claude/hooks/format-file.sh
 ```
 
----
-
-## 7. RTK — хук
-
-RTK сам создаёт хук и обновляет `CLAUDE.md`:
+## 7. RTK хук
 
 ```bash
 rtk init -g
 ```
 
-> Не редактируй `~/.claude/hooks/rtk-rewrite.sh` вручную — RTK проверяет целостность файла через SHA256 и заблокирует выполнение. Для восстановления: `rtk init -g --auto-patch`.
-
----
+Регистрирует `rtk hook claude` в PreToolUse. Не редактировать хук вручную.
 
 ## 8. claude2 — второй аккаунт (опционально)
 
-`~/.claude-work/settings.json` — те же хуки, отдельные плагины. Плагины в `enabledPlugins` выбери под себя.
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(git *)",
-      "Bash(docker *)",
-      "Bash(docker-compose *)",
-      "Bash(poetry run *)",
-      "Bash(python *)",
-      "Bash(python3 *)",
-      "Bash(pip *)",
-      "Bash(npm run *)",
-      "Bash(npx *)",
-      "Bash(bun *)",
-      "Bash(node *)",
-      "Bash(ls *)",
-      "Bash(rtk *)",
-      "Bash(cat *)",
-      "Bash(find *)",
-      "Bash(grep *)",
-      "Bash(rg *)",
-      "Bash(tree *)",
-      "Bash(pwd)",
-      "Bash(echo *)",
-      "Bash(wc *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(which *)",
-      "Bash(whoami)",
-      "Bash(env)",
-      "Bash(printenv *)",
-      "Bash(ps *)",
-      "Bash(kill *)",
-      "Bash(mkdir *)",
-      "Bash(cp *)",
-      "Bash(mv *)"
-    ]
-  },
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -Command \"[console]::beep(600,200); [console]::beep(900,200)\"",
-            "async": true
-          },
-          {
-            "type": "command",
-            "command": "tmux set-window-option -t $TMUX_PANE window-status-style 'bg=#f38ba8,fg=#1e1e2e,bold' 2>/dev/null || true",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "tmux set-window-option -u -t $TMUX_PANE window-status-style 2>/dev/null || true",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "powershell.exe -Command \"[console]::beep(800,300)\"",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "jq -r '.tool_input.file_path // empty' | { read -r f || exit 0; bash /home/user/.claude/hooks/format-file.sh \"$f\"; }",
-            "async": true
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/home/user/.claude/hooks/rtk-rewrite.sh"
-          }
-        ]
-      }
-    ]
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "bash /home/user/.claude/statusline-command.sh"
-  },
-  "skipDangerousModePermissionPrompt": true
-}
-```
+Скопировать `~/.claude/settings.json` в `~/.claude-work/settings.json`, заменить пути:
 
 ```bash
+cp ~/.claude/settings.json ~/.claude-work/settings.json
 sed -i "s|/home/user|$HOME|g" ~/.claude-work/settings.json
 ```
 
----
+## 9. ~/.tmux.conf
 
-## 9. `~/.tmux.conf`
-
-Тема Catppuccin Mocha, удобные шорткаты, сохранение сессий. Активная вкладка — зелёная, ждущая ответа — красная.
+Тема Catppuccin Mocha, префикс `Ctrl+a`, табы сверху, Mouse on, tmux-resurrect (автосохранение каждые 15 мин).
 
 ```bash
-# Установи TPM (менеджер плагинов tmux)
 git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
-```
-
-```bash
-# ~/.tmux.conf
-# --- Основные настройки ---
-set -g default-terminal "tmux-256color"
-set -ag terminal-overrides ",xterm-256color:RGB"
-set -g mouse on
-set -g history-limit 10000
-set -g base-index 1
-setw -g pane-base-index 1
-set -g renumber-windows on
-set -g escape-time 0
-set -g focus-events on
-
-# --- Префикс: Ctrl+a (удобнее чем Ctrl+b) ---
-unbind C-b
-set -g prefix C-a
-bind C-a send-prefix
-
-# --- Окна (табы) ---
-bind c new-window -c "#{pane_current_path}"
-bind n next-window
-bind p previous-window
-bind -n M-1 select-window -t 1
-bind -n M-2 select-window -t 2
-bind -n M-3 select-window -t 3
-bind -n M-4 select-window -t 4
-bind -n M-5 select-window -t 5
-bind -n M-6 select-window -t 6
-bind -n M-7 select-window -t 7
-bind -n M-8 select-window -t 8
-bind -n M-9 select-window -t 9
-
-# --- Панели: разделение ---
-bind | split-window -h -c "#{pane_current_path}"
-bind - split-window -v -c "#{pane_current_path}"
-unbind '"'
-unbind %
-
-# --- Навигация по панелям: Alt+стрелки ---
-bind -n M-Left select-pane -L
-bind -n M-Right select-pane -R
-bind -n M-Up select-pane -U
-bind -n M-Down select-pane -D
-
-# --- Ресайз панелей: Prefix + стрелки ---
-bind -r Left resize-pane -L 5
-bind -r Right resize-pane -R 5
-bind -r Up resize-pane -U 3
-bind -r Down resize-pane -D 3
-
-# --- Быстрая перезагрузка конфига ---
-bind r source-file ~/.tmux.conf \; display "Config reloaded!"
-
-# --- Статус-бар (табы сверху) ---
-set -g status-position top
-set -g status-style "bg=#1e1e2e,fg=#cdd6f4"
-set -g status-left-length 30
-set -g status-right-length 50
-
-set -g status-left "#[bg=#89b4fa,fg=#1e1e2e,bold] #S #[bg=default] "
-set -g status-right "#[fg=#a6adc8] %H:%M  %d/%m "
-
-# Стиль табов (окон)
-# Неактивные: серый текст, дефолтный фон
-setw -g window-status-style "fg=#6c7086,bg=default"
-setw -g window-status-format " #I:#W "
-# Активная: чёрный текст на зелёном фоне (единственный зелёный таб)
-setw -g window-status-current-style "fg=#1e1e2e,bg=#a6e3a1,bold"
-setw -g window-status-current-format " #I:#W "
-setw -g window-status-separator ""
-
-# Bell: красный фон когда Claude ждёт ответа
-set -g monitor-bell on
-set -g bell-action any
-setw -g window-status-bell-style "bg=#f38ba8,fg=#1e1e2e,bold"
-
-# --- Панели ---
-set -g pane-border-style "fg=#313244"
-set -g pane-active-border-style "fg=#89b4fa"
-
-# --- Копирование (vi mode) ---
-setw -g mode-keys vi
-bind -T copy-mode-vi v send -X begin-selection
-bind -T copy-mode-vi y send -X copy-selection-and-cancel
-
-# --- Плагины ---
-set -g @plugin 'tmux-plugins/tpm'
-set -g @plugin 'tmux-plugins/tmux-resurrect'
-set -g @plugin 'tmux-plugins/tmux-continuum'
-
-set -g @resurrect-processes 'mc bash'
-set -g @continuum-restore 'on'
-set -g @continuum-save-interval '15'
-
-run '~/.tmux/plugins/tpm/tpm'
-```
-
-```bash
-# Применить конфиг
 tmux source-file ~/.tmux.conf
-# Установить плагины: внутри tmux нажми Prefix+I (Ctrl+a, затем I)
+# Внутри tmux: Prefix+I для установки плагинов
 ```
-
----
 
 ## 10. Перезапусти Claude Code
 
 Хуки и статус-строка подхватываются только при старте новой сессии.
+
+## 11. Open-helper `o` + wslu (для WSL2)
+
+Открытие файлов/папок из терминала «как в IDE». В VS Code-терминале есть Ctrl+Click,
+но для случаев когда руки на клавиатуре — функция `o`:
+
+```bash
+sudo apt install -y wslu
+```
+
+В `~/.bashrc`:
+
+```bash
+# o <file>          → открыть в текущем окне VS Code (новая вкладка)
+# o <file>:<line>   → открыть в VS Code на нужной строке
+# o <dir>           → открыть в Windows Explorer (через wslview → UNC \\wsl.localhost\Ubuntu\...)
+# o <URL>           → открыть в браузере по умолчанию
+o() {
+    local arg="${1/#\~/$HOME}"
+    local path="${arg%%:*}"
+    if [[ -d "$arg" ]]; then
+        wslview "$arg"
+    elif [[ -e "$path" ]]; then
+        if [[ "$arg" == *:* ]]; then
+            code -g "$arg"
+        else
+            code "$arg"
+        fi
+    else
+        wslview "$arg"
+    fi
+}
+```
+
+## 12. VS Code + WSL Remote (главный интерфейс)
+
+Идея: одно окно VS Code в WSL-remote режиме, в нём авто-стартует tmux,
+Ctrl+Click по путям из ответов Claude открывает файлы как вкладки рядом.
+
+### 12.1. Поставить расширение
+
+`Extensions` → ищи **WSL** от Microsoft (`ms-vscode-remote.remote-wsl`).
+
+### 12.2. Глобальные настройки VS Code (Windows-сторона)
+
+Путь: `C:\Users\<USER>\AppData\Roaming\Code\User\settings.json`
+
+```json
+{
+  "terminal.integrated.fontFamily": "Cascadia Mono",
+  "terminal.integrated.fontSize": 14,
+  "terminal.integrated.cursorBlinking": false,
+  "terminal.integrated.scrollback": 20000,
+  "terminal.integrated.profiles.linux": {
+    "tmux": {
+      "path": "bash",
+      "args": ["-lc", "tmux attach -d -t 0 2>/dev/null || tmux new"],
+      "icon": "terminal-tmux"
+    },
+    "bash": { "path": "bash", "icon": "terminal-bash" }
+  },
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.defaultLocation": "editor",
+  "workbench.colorCustomizations": {
+    "terminal.background": "#002b36",
+    "terminal.foreground": "#93a1a1",
+    "terminalCursor.foreground": "#93a1a1"
+  },
+  "editor.fontFamily": "Cascadia Mono, Consolas, 'Courier New', monospace",
+  "editor.fontSize": 14,
+  "editor.minimap.enabled": false,
+  "files.autoSave": "onFocusChange",
+  "security.workspace.trust.enabled": false,
+  "task.allowAutomaticTasks": "on"
+}
+```
+
+Ключевое:
+
+- `defaultProfile.linux: "bash"` — Ctrl+Shift+\` даёт чистый bash без tmux
+- `defaultLocation: "editor"` — новые терминалы открываются как вкладки редактора
+- `task.allowAutomaticTasks: "on"` — разрешает авто-задачу `runOn: folderOpen`
+- `security.workspace.trust.enabled: false` — убирает «trust this folder?» плашку
+
+### 12.3. Auto-attach tmux на старте (WSL-сторона)
+
+`~/.vscode/tasks.json` — задача запускается при открытии workspace `~`:
+
+```json
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Auto-attach tmux",
+      "type": "shell",
+      "command": "tmux attach -d -t 0 2>/dev/null || tmux new",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "echo": false,
+        "showReuseMessage": false,
+        "clear": false
+      },
+      "runOptions": { "runOn": "folderOpen" },
+      "problemMatcher": []
+    }
+  ]
+}
+```
+
+### 12.4. Ярлык на рабочий стол Windows
+
+Создаётся через PowerShell-interop из WSL:
+
+```bash
+powershell.exe -NoProfile -Command "
+\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('C:\Users\Alex\Desktop\VS Code (WSL).lnk')
+\$s.TargetPath = 'C:\Program Files\Microsoft VS Code\Code.exe'
+\$s.Arguments = '--remote wsl+Ubuntu /home/alex'
+\$s.IconLocation = 'C:\Program Files\Microsoft VS Code\Code.exe,0'
+\$s.WorkingDirectory = 'C:\Program Files\Microsoft VS Code'
+\$s.Save()
+"
+```
+
+Замени `Alex` на своё Windows-имя пользователя, `Ubuntu` — на имя своего WSL-distro
+(см. `wsl -l -q`).
+
+## 13. Цепочка запуска (как всё связано)
+
+```
+[Двойной клик по ярлыку на рабочем столе]
+    │
+    ▼
+Code.exe --remote wsl+Ubuntu /home/alex
+    │
+    ▼
+VS Code открывается в WSL-remote режиме (зелёный "WSL: Ubuntu" внизу)
+    │
+    ├─→ читает Windows settings.json    (тема, шрифт, профили терминалов)
+    └─→ читает ~/.vscode/tasks.json     (auto-attach tmux)
+            │
+            ▼
+        Task "Auto-attach tmux" запускается:
+            bash -c "tmux attach -d -t 0 || tmux new"
+            │
+            ▼
+        Если tmux server жив (после ребута WSL):
+            → tmux-continuum auto-restore из ~/.local/share/tmux/resurrect/last
+            → панели восстанавливаются с правильными cwd
+            → resurrect перезапускает процессы: cc1/cc2/claude через -c (continue)
+            │
+            ▼
+        Tmux отображается в editor-area VS Code как вкладка
+            │
+            ▼
+        cc1-процессы поднимаются (имя процесса = cc1 через exec -a),
+        каждый ресюмится из ~/.claude/projects/<cwd>/ через флаг -c
+```
+
+Что критично для корректного восстановления:
+
+- `cc1`/`cc2` — bash-функции с `exec -a`, не алиасы (см. §2)
+- `tmux-continuum @continuum-restore 'on'` в `~/.tmux.conf`
+- `@resurrect-processes` в tmux-конфиге включает `cc1`/`cc2`/`claude`
+- Снапшоты живут в `~/.local/share/tmux/resurrect/`
 
 ---
 
 ## Проверка
 
 ```bash
-rtk --version          # RTK установлен
-rtk gain               # Аналитика работает
-rtk proxy "git status" # Показывает rewrite
-cc1                    # Запускает claude1
+rtk --version && rtk gain && cc1
 ```
 
-Внутри Claude Code:
-- Нижняя строка: `claude1  claude-sonnet-4-6  папка/ветка  ctx: X%`
-- После ответа Claude — вкладка tmux краснеет, двойной бип
-- После отправки сообщения — вкладка возвращается в обычный цвет
+Внутри Claude Code: нижняя строка показывает `claude1  модель  папка/ветка  ctx: X%`.
+После ответа — вкладка tmux краснеет + бип. После отправки — сброс цвета.
 
 ---
 
 ## Справочник
 
-### RTK мета-команды
+### RTK
 
 ```bash
-rtk gain                   # Сколько токенов сэкономлено
-rtk gain --history         # История с детализацией
-rtk discover               # Упущенные оптимизации
-rtk proxy <cmd>            # Выполнить без RTK (дебаг)
-rtk init -g                # Переустановить хук
-rtk init -g --auto-patch   # Переустановить после правки хука
+rtk gain [--history]   # статистика токенов
+rtk discover           # упущенные оптимизации
+rtk proxy <cmd>        # выполнить без RTK
+rtk init -g            # переустановить хук
 ```
 
 ### tmux шорткаты
 
-| Шорткат | Действие |
-|---------|----------|
-| `Ctrl+a` | Префикс |
-| `Prefix + \|` | Разделить вертикально |
-| `Prefix + -` | Разделить горизонтально |
-| `Prefix + c` | Новое окно |
-| `Alt+1..9` | Переключить окно |
-| `Alt+←→↑↓` | Навигация между панелями |
-| `Prefix + r` | Перезагрузить конфиг |
-| `tmux attach` | Подключиться к существующей сессии |
+| Шорткат       | Действие                 |
+| ------------- | ------------------------ |
+| `Ctrl+a`      | Префикс                  |
+| `Prefix + \|` | Разделить вертикально    |
+| `Prefix + -`  | Разделить горизонтально  |
+| `Prefix + c`  | Новое окно               |
+| `Alt+1..9`    | Переключить окно         |
+| `Alt+←→↑↓`    | Навигация между панелями |
+| `Prefix + r`  | Перезагрузить конфиг     |
+| `tmux attach` | Подключиться к сессии    |
 
 ### Структура файлов
 
+WSL-сторона:
+
 ```
 ~/.claude/
-├── CLAUDE.md                  # @RTK.md (создаётся через rtk init -g)
-├── RTK.md                     # Документация RTK (создаётся через rtk init -g)
+├── CLAUDE.md / RTK.md
 ├── settings.json
 ├── statusline-command.sh
 └── hooks/
-    ├── rtk-rewrite.sh         # Управляется RTK, не редактировать
-    ├── .rtk-hook.sha256
+    ├── rtk-rewrite.sh   # не редактировать
     └── format-file.sh
 
-~/.claude-work/
-└── settings.json
-
+~/.claude-work/settings.json        # cc2-профиль (work)
 ~/.tmux.conf
-~/.bashrc
+~/.bashrc                            # cc1/cc2 функции, o(), алиасы pcl/pseo/…
+~/.vscode/tasks.json                 # auto-attach tmux на старте VS Code
+~/.tmux/plugins/                     # tpm + tmux-resurrect + tmux-continuum
+~/.local/share/tmux/resurrect/       # снапшоты состояния (auto, каждые 15 мин)
 ```
+
+Windows-сторона:
+
+```
+C:\Users\<USER>\AppData\Roaming\Code\User\settings.json   # VS Code (тема, шрифт, профили)
+C:\Users\<USER>\Desktop\VS Code (WSL).lnk                 # ярлык запуска
+```
+
+### Чек-лист на новой машине
+
+1. WSL2 Ubuntu установлен (`wsl --install -d Ubuntu`)
+2. Node.js + npm в WSL → `npm install -g @anthropic-ai/claude-code`
+3. `sudo apt install -y jq tmux wslu`
+4. Скопировать `~/.bashrc`, `~/.tmux.conf`, `~/.claude/`, `~/.claude-work/`, `~/.vscode/tasks.json`
+5. `git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm`
+6. Запустить tmux, нажать `Prefix+I` для установки плагинов
+7. `rtk init -g` (если используется RTK)
+8. На Windows: установить VS Code + WSL-расширение
+9. Положить `settings.json` в `%APPDATA%\Code\User\`
+10. Создать ярлык на рабочем столе (см. §12.4)
+11. Двойной клик → проверить, что VS Code открылся в WSL-режиме и tmux поднялся
