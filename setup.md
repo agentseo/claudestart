@@ -68,14 +68,19 @@ mkdir -p ~/.claude/hooks ~/.claude-work
 - `permissions.allow` — список разрешённых команд (git, docker, python, rtk и др.)
 - `hooks.PreToolUse[Bash]` — `rtk hook claude` (RTK rewrite)
 - `hooks.PostToolUse[Write|Edit]` — `format-file.sh` (авто-форматирование)
+- `hooks.PostToolUse[*]` — tmux tab синий (`#89b4fa`): любой инструмент = агент работает
 - `hooks.Stop` — beep + tmux tab красный (`#f38ba8`): Claude закончил ход
-- `hooks.Notification` — beep + tmux tab жёлтый (`#f9e2af`): Claude ждёт ответа/пермишена посреди хода
-- `hooks.UserPromptSubmit` — tmux tab синий (`#89b4fa`): агент работает (срабатывает на отправку промпта)
+- `hooks.Notification` — beep + tmux tab жёлтый (`#f9e2af`): простой ≥60с / нужен пермишен
+- `hooks.UserPromptSubmit` — tmux tab синий (`#89b4fa`): агент работает (на отправку промпта)
 - `hooks.SessionEnd` — tmux tab сброс цвета при выходе из Claude (`/exit`, Ctrl-D)
 
 Автомат состояний вкладки (цвет виден на **фоновых** табах; активный таб всегда
 зелёный `#a6e3a1` как `window-status-current`):
 🔵 синий — агент работает · 🔴 красный — ход закончен, твой ход · 🟡 жёлтый — ждёт пермишена
+
+Цвет ставится **по состоянию, а не по краю**: синий красится на каждый tool-call
+(`PostToolUse`), поэтому если `Notification` мигнул жёлтым посреди хода, следующий
+же инструмент вернёт синий. Жёлтый остаётся только когда агент реально стоит.
 
 - `statusLine` — `bash ~/.claude/statusline-command.sh`
 - `skipDangerousModePermissionPrompt: true`
