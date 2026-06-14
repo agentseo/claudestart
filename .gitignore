@@ -7,3 +7,8 @@
 .wolf/designqc-captures/
 .wolf/memory.md
 .wolf/hooks/_session.json
+
+# Личная инфраструктура — не публикуем
+vpn-chain.md
+vps-tunnel.md
+.playwright-mcp/
