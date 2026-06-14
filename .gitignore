@@ -1,12 +1,5 @@
-# OpenWolf runtime state — не коммитим
-.wolf/daemon.log
-.wolf/token-ledger.json
-.wolf/cron-state.json
-.wolf/suggestions.json
-.wolf/designqc-report.json
-.wolf/designqc-captures/
-.wolf/memory.md
-.wolf/hooks/_session.json
+# OpenWolf — не публикуем (отключён в этом проекте)
+.wolf/
 
 # Личная инфраструктура — не публикуем
 vpn-chain.md
